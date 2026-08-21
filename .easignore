@@ -1,0 +1,6 @@
+# Ignore non-app files and scratch scripts from EAS Build archive
+scratch/
+*.apk
+*.gs
+dist/
+web-build/
