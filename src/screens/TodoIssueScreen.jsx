@@ -22,6 +22,8 @@ export default function TodoIssueScreen({ route, navigation }) {
       navigation.navigate('LotList', { department: 'Stitching', departmentId: 'stitching' });
     } else if (tabKey === 'packing') {
       navigation.navigate('LotList', { department: 'Packing', departmentId: 'packing' });
+    } else if (tabKey === 'completed') {
+      navigation.navigate('CompletedLot');
     } else if (tabKey === 'todo_issue') {
       // Already on Issued Today screen
     } else if (tabKey === 'todo_list') {

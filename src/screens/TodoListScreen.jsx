@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,20 @@ import {
   StyleSheet,
   Platform,
   Alert,
+  StatusBar,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import BottomNavBar from '../components/BottomNavBar';
+import {
+  scheduleTaskNotification,
+  cancelTaskNotification,
+  requestNotificationPermissions,
+} from '../services/notificationService';
+
+const STORAGE_KEY = '@user_custom_todo_tasks_v2';
 
 const CATEGORIES = ['Production', 'Fabric', 'Allotment', 'Quality', 'General'];
 const PRIORITIES = [
@@ -24,49 +33,22 @@ const PRIORITIES = [
   { id: 'Low', label: 'Low Priority', color: colors.primary, bg: '#EFF6FF' },
 ];
 
+const REMINDER_PRESETS = [
+  { label: 'In 5 Mins (Test)', minutes: 5 },
+  { label: 'In 15 Mins', minutes: 15 },
+  { label: 'In 30 Mins', minutes: 30 },
+  { label: 'In 1 Hour', minutes: 60 },
+  { label: 'In 2 Hours', minutes: 120 },
+  { label: 'Tonight (8 PM)', type: 'tonight' },
+  { label: 'Tomorrow (9 AM)', type: 'tomorrow' },
+];
+
 export default function TodoListScreen({ route, navigation }) {
-  // Initial Sample Daily Tasks
-  const [tasks, setTasks] = useState([
-    {
-      id: 'task-1',
-      title: 'Verify German Fleece Fabric shade for Lot #11177',
-      category: 'Fabric',
-      priority: 'High',
-      completed: false,
-      reminderTime: '11:00 AM Today',
-      createdAt: '2026-08-10',
-    },
-    {
-      id: 'task-2',
-      title: 'Dispatch 295 Pcs Sweatshirts to Pintu (Packing)',
-      category: 'Allotment',
-      priority: 'High',
-      completed: true,
-      reminderTime: '10:30 AM Today',
-      createdAt: '2026-08-10',
-    },
-    {
-      id: 'task-3',
-      title: 'Check Stitching Line 3 output for Chrome Heart brand',
-      category: 'Production',
-      priority: 'Medium',
-      completed: false,
-      reminderTime: '03:00 PM Today',
-      createdAt: '2026-08-10',
-    },
-    {
-      id: 'task-4',
-      title: 'Download PO documents for pending Winter Season lots',
-      category: 'General',
-      priority: 'Low',
-      completed: false,
-      reminderTime: '05:30 PM Today',
-      createdAt: '2026-08-10',
-    },
-  ]);
+  const [tasks, setTasks] = useState([]);
+  const [loadingStorage, setLoadingStorage] = useState(true);
 
   // Form & Filter States
-  const [activeFilter, setActiveFilter] = useState('All'); // 'All' | 'Active' | 'Completed' | 'High'
+  const [activeFilter, setActiveFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [addModalVisible, setAddModalVisible] = useState(false);
 
@@ -74,7 +56,40 @@ export default function TodoListScreen({ route, navigation }) {
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState('Production');
   const [newPriority, setNewPriority] = useState('High');
-  const [newReminderTime, setNewReminderTime] = useState('Today at 04:00 PM');
+  const [selectedPreset, setSelectedPreset] = useState(REMINDER_PRESETS[0]);
+  const [customTimeText, setCustomTimeText] = useState('');
+
+  // Load saved user tasks from AsyncStorage
+  useEffect(() => {
+    loadUserTasks();
+    requestNotificationPermissions();
+  }, []);
+
+  const loadUserTasks = async () => {
+    try {
+      setLoadingStorage(true);
+      const json = await AsyncStorage.getItem(STORAGE_KEY);
+      if (json) {
+        const parsed = JSON.parse(json);
+        setTasks(Array.isArray(parsed) ? parsed : []);
+      } else {
+        setTasks([]);
+      }
+    } catch (err) {
+      console.error('Error loading tasks from AsyncStorage:', err);
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
+
+  const saveTasks = async (newTasks) => {
+    try {
+      setTasks(newTasks);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newTasks));
+    } catch (err) {
+      console.error('Error saving tasks to AsyncStorage:', err);
+    }
+  };
 
   // Filtered Tasks
   const filteredTasks = useMemo(() => {
@@ -100,21 +115,59 @@ export default function TodoListScreen({ route, navigation }) {
     return { total, completed, active, highPriority };
   }, [tasks]);
 
-  const handleToggleTask = (id) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
+  const handleToggleTask = async (id) => {
+    const targetTask = tasks.find((t) => t.id === id);
+    if (targetTask && !targetTask.completed && targetTask.notificationId) {
+      // Cancel scheduled notification if user completes the task early
+      await cancelTaskNotification(targetTask.notificationId);
+    }
+
+    const updated = tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t));
+    await saveTasks(updated);
   };
 
-  const handleDeleteTask = (id) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+  const handleDeleteTask = async (id) => {
+    const targetTask = tasks.find((t) => t.id === id);
+    if (targetTask && targetTask.notificationId) {
+      await cancelTaskNotification(targetTask.notificationId);
+    }
+
+    const updated = tasks.filter((t) => t.id !== id);
+    await saveTasks(updated);
   };
 
-  const handleAddTask = () => {
+  const handleAddTask = async () => {
     if (!newTitle.trim()) {
-      Alert.alert('Task Title Required', 'Please enter a valid task description.');
+      Alert.alert('Task Title Required', 'Please enter a task description.');
       return;
     }
+
+    // Determine reminder trigger Date
+    let reminderDate = new Date();
+    let displayTimeStr = '';
+
+    if (customTimeText.trim()) {
+      displayTimeStr = customTimeText.trim();
+      reminderDate = new Date(Date.now() + 10 * 60 * 1000); // 10 mins default for custom
+    } else if (selectedPreset) {
+      if (selectedPreset.minutes) {
+        reminderDate = new Date(Date.now() + selectedPreset.minutes * 60 * 1000);
+        displayTimeStr = `In ${selectedPreset.minutes} mins (${reminderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+      } else if (selectedPreset.type === 'tonight') {
+        reminderDate.setHours(20, 0, 0, 0);
+        if (reminderDate.getTime() <= Date.now()) {
+          reminderDate.setDate(reminderDate.getDate() + 1);
+        }
+        displayTimeStr = 'Tonight at 8:00 PM';
+      } else if (selectedPreset.type === 'tomorrow') {
+        reminderDate.setDate(reminderDate.getDate() + 1);
+        reminderDate.setHours(9, 0, 0, 0);
+        displayTimeStr = 'Tomorrow at 9:00 AM';
+      }
+    }
+
+    // Schedule real system notification on mobile
+    const notifId = await scheduleTaskNotification(newTitle.trim(), reminderDate);
 
     const newTask = {
       id: `task-${Date.now()}`,
@@ -122,13 +175,22 @@ export default function TodoListScreen({ route, navigation }) {
       category: newCategory,
       priority: newPriority,
       completed: false,
-      reminderTime: newReminderTime.trim() || 'Today',
+      reminderTime: displayTimeStr || 'Scheduled',
+      notificationId: notifId,
       createdAt: new Date().toISOString().split('T')[0],
     };
 
-    setTasks((prev) => [newTask, ...prev]);
+    const updated = [newTask, ...tasks];
+    await saveTasks(updated);
+
     setNewTitle('');
+    setCustomTimeText('');
     setAddModalVisible(false);
+
+    Alert.alert(
+      '🔔 Reminder Scheduled!',
+      `Your task has been saved. You will receive a mobile push notification at: ${displayTimeStr}`
+    );
   };
 
   const handleSelectTab = (tabKey) => {
@@ -136,15 +198,16 @@ export default function TodoListScreen({ route, navigation }) {
       navigation.navigate('LotList', { department: 'Stitching', departmentId: 'stitching' });
     } else if (tabKey === 'packing') {
       navigation.navigate('LotList', { department: 'Packing', departmentId: 'packing' });
+    } else if (tabKey === 'completed') {
+      navigation.navigate('CompletedLot');
     } else if (tabKey === 'todo_issue') {
       navigation.navigate('TodoIssue');
     } else if (tabKey === 'todo_list') {
-      // Already on Personal To-Do List screen
+      // Already on To-Do List screen
     } else if (tabKey === 'summary') {
       navigation.navigate('ExecutiveSummary');
     }
   };
-
 
   const handleBackPress = () => {
     if (navigation.canGoBack()) {
@@ -164,10 +227,10 @@ export default function TodoListScreen({ route, navigation }) {
           </TouchableOpacity>
           <View style={styles.headerTitleGroup}>
             <View style={styles.statusPill}>
-              <Ionicons name="time-outline" size={12} color="#38BDF8" />
-              <Text style={styles.statusPillText}>DAILY REMINDERS & TASK MANAGER</Text>
+              <Ionicons name="notifications" size={12} color="#38BDF8" />
+              <Text style={styles.statusPillText}>REAL PUSH REMINDERS</Text>
             </View>
-            <Text style={styles.headerTitle}>My Daily To-Do List</Text>
+            <Text style={styles.headerTitle}>My Daily Tasks</Text>
           </View>
           <TouchableOpacity
             onPress={() => setAddModalVisible(true)}
@@ -202,13 +265,13 @@ export default function TodoListScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Search Bar & Add Button Row */}
+        {/* Search Bar & Filter Row */}
         <View style={styles.searchRow}>
           <View style={styles.searchWrapper}>
             <Ionicons name="search-outline" size={18} color={colors.textSecondary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search tasks or categories..."
+              placeholder="Search tasks..."
               placeholderTextColor={colors.textMuted}
               value={searchTerm}
               onChangeText={setSearchTerm}
@@ -248,11 +311,13 @@ export default function TodoListScreen({ route, navigation }) {
           ListEmptyComponent={
             <View style={styles.emptyBox}>
               <MaterialCommunityIcons name="checkbox-marked-circle-outline" size={48} color={colors.textMuted} />
-              <Text style={styles.emptyTitle}>No Tasks Found</Text>
+              <Text style={styles.emptyTitle}>
+                {loadingStorage ? 'Loading Tasks...' : 'No Custom Tasks Yet'}
+              </Text>
               <Text style={styles.emptySub}>
                 {searchTerm
-                  ? 'No tasks match your search query.'
-                  : 'Tap "+ ADD TASK" at the top to add a new daily reminder.'}
+                  ? 'No tasks match your search.'
+                  : 'Tap "+ ADD TASK" to create your first task with real mobile push notifications.'}
               </Text>
             </View>
           }
@@ -288,7 +353,7 @@ export default function TodoListScreen({ route, navigation }) {
                     </View>
 
                     <View style={styles.timeBadge}>
-                      <Ionicons name="notifications-outline" size={11} color={colors.textMuted} />
+                      <Ionicons name="notifications-outline" size={11} color={colors.primary} />
                       <Text style={styles.timeBadgeText}>{item.reminderTime}</Text>
                     </View>
                   </View>
@@ -312,18 +377,18 @@ export default function TodoListScreen({ route, navigation }) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Set New Task Reminder</Text>
+              <Text style={styles.modalTitle}>New Task & Mobile Reminder</Text>
               <TouchableOpacity onPress={() => setAddModalVisible(false)}>
                 <Ionicons name="close" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               {/* Task Title */}
-              <Text style={styles.fieldLabel}>Task Description</Text>
+              <Text style={styles.fieldLabel}>TASK DESCRIPTION</Text>
               <TextInput
                 style={styles.modalInput}
-                placeholder="e.g. Verify Lot #11180 shade and fabric status"
+                placeholder="Enter what you need to do..."
                 placeholderTextColor={colors.textMuted}
                 value={newTitle}
                 onChangeText={setNewTitle}
@@ -331,7 +396,7 @@ export default function TodoListScreen({ route, navigation }) {
               />
 
               {/* Category */}
-              <Text style={styles.fieldLabel}>Category</Text>
+              <Text style={styles.fieldLabel}>CATEGORY</Text>
               <View style={styles.chipGrid}>
                 {CATEGORIES.map((cat) => (
                   <TouchableOpacity
@@ -347,7 +412,7 @@ export default function TodoListScreen({ route, navigation }) {
               </View>
 
               {/* Priority */}
-              <Text style={styles.fieldLabel}>Priority Level</Text>
+              <Text style={styles.fieldLabel}>PRIORITY LEVEL</Text>
               <View style={styles.chipGrid}>
                 {PRIORITIES.map((p) => (
                   <TouchableOpacity
@@ -370,20 +435,39 @@ export default function TodoListScreen({ route, navigation }) {
                 ))}
               </View>
 
-              {/* Reminder Time */}
-              <Text style={styles.fieldLabel}>Reminder Date & Time</Text>
-              <TextInput
-                style={styles.modalInputSingle}
-                placeholder="e.g. Today at 04:30 PM"
-                placeholderTextColor={colors.textMuted}
-                value={newReminderTime}
-                onChangeText={setNewReminderTime}
-              />
+              {/* Mobile Notification Reminder Time Presets */}
+              <Text style={styles.fieldLabel}>MOBILE NOTIFICATION REMINDER TIME</Text>
+              <View style={styles.chipGrid}>
+                {REMINDER_PRESETS.map((preset) => {
+                  const isSelected = selectedPreset && selectedPreset.label === preset.label;
+                  return (
+                    <TouchableOpacity
+                      key={preset.label}
+                      onPress={() => {
+                        setSelectedPreset(preset);
+                        setCustomTimeText('');
+                      }}
+                      style={[styles.formChip, isSelected && styles.presetChipActive]}
+                    >
+                      <Ionicons
+                        name="notifications"
+                        size={12}
+                        color={isSelected ? '#FFFFFF' : colors.primary}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={[styles.formChipText, isSelected && styles.formChipTextActive]}>
+                        {preset.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity onPress={handleAddTask} style={styles.submitBtn}>
-                <Text style={styles.submitBtnText}>SAVE TASK REMINDER</Text>
+                <Ionicons name="notifications-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.submitBtnText}>SCHEDULE REAL REMINDER</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -396,7 +480,6 @@ export default function TodoListScreen({ route, navigation }) {
         todoListCount={metrics.active}
         onSelectTab={handleSelectTab}
       />
-
     </SafeAreaView>
   );
 }
@@ -405,6 +488,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 10 : 0,
   },
   container: {
     flex: 1,
@@ -624,8 +708,8 @@ const styles = StyleSheet.create({
   },
   timeBadgeText: {
     fontSize: 10,
-    color: colors.textMuted,
-    fontWeight: '600',
+    color: colors.primary,
+    fontWeight: '700',
   },
   deleteBtn: {
     padding: 6,
@@ -662,7 +746,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '85%',
+    maxHeight: '88%',
     padding: 20,
   },
   modalHeader: {
@@ -680,14 +764,14 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   modalBody: {
-    maxHeight: 360,
+    maxHeight: 380,
   },
   fieldLabel: {
     fontSize: 11,
     fontWeight: '800',
     color: colors.textSecondary,
     marginBottom: 6,
-    marginTop: 10,
+    marginTop: 12,
   },
   modalInput: {
     backgroundColor: colors.inputBg,
@@ -699,22 +783,14 @@ const styles = StyleSheet.create({
     height: 70,
     color: colors.textPrimary,
   },
-  modalInputSingle: {
-    backgroundColor: colors.inputBg,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 12,
-    fontSize: 13,
-    height: 44,
-    color: colors.textPrimary,
-  },
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
   formChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 10,
@@ -723,6 +799,10 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
   },
   formChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  presetChipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
@@ -739,15 +819,16 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     backgroundColor: colors.primaryDark,
-    height: 48,
+    height: 50,
     borderRadius: 14,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
   submitBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '900',
     letterSpacing: 0.8,
   },
 });

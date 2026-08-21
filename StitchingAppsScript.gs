@@ -54,15 +54,38 @@ function doPost(e) {
 }
 
 /**
- * Handles HTTP GET Requests (URL Query Parameter Fallback)
+ * Handles HTTP GET Requests (URL Query Parameter Fallback & Data Fetching)
  */
 function doGet(e) {
   try {
     const data = (e && e.parameter) ? e.parameter : {};
+    if (data.action === 'getCompletedLots' || data.action === 'readCompletedLots' || data.action === 'getCompleted') {
+      return getCompletedLotsData(data);
+    }
     return processStitchingData(data);
   } catch (err) {
     return createJsonResponse({ ok: false, error: err.toString() });
   }
+}
+
+/**
+ * Returns Completed Lots rows from Google Sheet
+ */
+function getCompletedLotsData(data) {
+  const targetId = data.spreadsheetId || '1Ydzo9F2FUsU_VTQdUfz12uQ_l4E_B0fhp0w4H0DYA';
+  let ss;
+  try {
+    ss = SpreadsheetApp.openById(targetId);
+  } catch(e) {
+    ss = getTargetSpreadsheet();
+  }
+  const sheetName = data.sheetName || 'Completed Lots';
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    return createJsonResponse({ ok: false, error: 'Sheet tab not found', values: [] });
+  }
+  const values = sheet.getDataRange().getValues();
+  return createJsonResponse({ ok: true, values: values });
 }
 
 /**

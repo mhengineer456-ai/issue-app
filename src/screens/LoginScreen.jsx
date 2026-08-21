@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,12 @@ import {
   ActivityIndicator,
   Switch,
   Image,
+  StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { verifyLocationWithinGeofence, ALLOWED_RADIUS_METERS } from '../services/locationService';
 
 const appLogo = require('../../assets/app_logo.png');
 
@@ -27,34 +29,87 @@ const STATIONS = [
 ];
 
 export default function LoginScreen({ navigation }) {
-  const [operatorId, setOperatorId] = useState('ST-708');
-  const [password, setPassword] = useState('demo1234');
+  const [operatorId, setOperatorId] = useState('PINTU');
+  const [password, setPassword] = useState('72770');
   const [showPassword, setShowPassword] = useState(false);
   const [selectedStation, setSelectedStation] = useState('stitching');
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [locationStatus, setLocationStatus] = useState({
+    checking: true,
+    isWithinFence: false,
+    distanceMeters: null,
+    error: null,
+  });
 
-  const executeLogin = (stationId, opId, pass) => {
+  const checkGeofence = async () => {
+    setLocationStatus((prev) => ({ ...prev, checking: true }));
+    const result = await verifyLocationWithinGeofence();
+    setLocationStatus({
+      checking: false,
+      isWithinFence: result.isWithinFence,
+      distanceMeters: result.distanceMeters,
+      error: result.error,
+    });
+    return result;
+  };
+
+  useEffect(() => {
+    checkGeofence();
+  }, []);
+
+  const VALID_USERS = {
+    PINTU: '72770',
+    SHEELAGURU: '2931',
+  };
+
+  const executeLogin = async (stationId, opId, pass) => {
     setErrorMessage('');
-    if (!opId.trim()) {
-      setErrorMessage('Please enter your Operator ID or Username');
+    const cleanOpId = (opId || '').trim();
+    const cleanPass = (pass || '').trim();
+
+    if (!cleanOpId) {
+      setErrorMessage('Please enter your Operator ID / Username');
       return;
     }
-    if (!pass.trim()) {
+    if (!cleanPass) {
       setErrorMessage('Please enter your password');
       return;
     }
 
-    setLoading(true);
+    const uppercaseOpId = cleanOpId.toUpperCase();
+    const expectedPassword = VALID_USERS[uppercaseOpId];
 
-    setTimeout(() => {
-      setLoading(false);
-      navigation.replace('LotList', {
-        department: 'Stitching',
-        departmentId: 'stitching',
-      });
-    }, 500);
+    if (!expectedPassword || cleanPass !== expectedPassword) {
+      setErrorMessage('Invalid credentials. Valid Users: PINTU (72770) or SHEELAGURU (2931)');
+      return;
+    }
+
+    setLoading(true);
+    const locResult = await checkGeofence();
+    setLoading(false);
+
+    if (!locResult.isWithinFence) {
+      if (locResult.error) {
+        setErrorMessage(`LOCATION ERROR: ${locResult.error}`);
+      } else {
+        setErrorMessage(
+          `ACCESS DENIED: You are ${locResult.distanceMeters}m away from factory premises. App usage is restricted within ${ALLOWED_RADIUS_METERS}m.`
+        );
+      }
+      return;
+    }
+
+    navigation.replace('LotList', {
+      department: stationId === 'packing' ? 'Packing' : 'Stitching',
+      departmentId: stationId,
+      user: {
+        operatorId: uppercaseOpId,
+        name: uppercaseOpId,
+        stationId: stationId,
+      },
+    });
   };
 
 
@@ -63,11 +118,10 @@ export default function LoginScreen({ navigation }) {
   };
 
   const handleDemoFillAndLogin = (stationId) => {
-    const defaultOpId = stationId === 'stitching' ? 'ST-708' : 'PK-302';
     setSelectedStation(stationId);
-    setOperatorId(defaultOpId);
-    setPassword('demo1234');
-    executeLogin(stationId, defaultOpId, 'demo1234');
+    setOperatorId('PINTU');
+    setPassword('72770');
+    executeLogin(stationId, 'PINTU', '72770');
   };
 
   return (
@@ -94,6 +148,61 @@ export default function LoginScreen({ navigation }) {
                 <Ionicons name="lock-closed" size={12} color="#38BDF8" />
                 <Text style={styles.securityBadgeText}>SECURE ENTERPRISE PORTAL</Text>
               </View>
+
+              {/* GPS Geofence Location Badge */}
+              <TouchableOpacity onPress={checkGeofence} style={[
+                styles.geofenceBadge,
+                {
+                  borderColor: locationStatus.checking
+                    ? 'rgba(56, 189, 248, 0.4)'
+                    : locationStatus.isWithinFence
+                    ? 'rgba(74, 222, 128, 0.4)'
+                    : 'rgba(248, 113, 113, 0.4)',
+                  backgroundColor: locationStatus.checking
+                    ? 'rgba(56, 189, 248, 0.1)'
+                    : locationStatus.isWithinFence
+                    ? 'rgba(74, 222, 128, 0.1)'
+                    : 'rgba(248, 113, 113, 0.1)',
+                }
+              ]}>
+                <Ionicons
+                  name={
+                    locationStatus.checking
+                      ? 'sync-outline'
+                      : locationStatus.isWithinFence
+                      ? 'location-outline'
+                      : 'alert-circle'
+                  }
+                  size={13}
+                  color={
+                    locationStatus.checking
+                      ? '#38BDF8'
+                      : locationStatus.isWithinFence
+                      ? '#4ADE80'
+                      : '#F87171'
+                  }
+                />
+                <Text
+                  style={[
+                    styles.geofenceBadgeText,
+                    {
+                      color: locationStatus.checking
+                        ? '#38BDF8'
+                        : locationStatus.isWithinFence
+                        ? '#4ADE80'
+                        : '#F87171',
+                    },
+                  ]}
+                >
+                  {locationStatus.checking
+                    ? 'CHECKING GPS LOCATION...'
+                    : locationStatus.isWithinFence
+                    ? `GEOFENCE: VERIFIED (${locationStatus.distanceMeters}m from Factory)`
+                    : locationStatus.distanceMeters !== null
+                    ? `GEOFENCE: OUTSIDE (${locationStatus.distanceMeters}m away • Max ${ALLOWED_RADIUS_METERS}m)`
+                    : 'GEOFENCE: LOCATION PERMISSION REQUIRED'}
+                </Text>
+              </TouchableOpacity>
 
               <Text style={styles.headerTitle}>GARMENT LOT ISSUE PORTAL</Text>
               <Text style={styles.headerSubtitle}>
@@ -129,7 +238,7 @@ export default function LoginScreen({ navigation }) {
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder="e.g. ST-708 or PK-302"
+                    placeholder="e.g. PINTU"
                     placeholderTextColor={colors.textMuted}
                     value={operatorId}
                     onChangeText={setOperatorId}
@@ -251,6 +360,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#0F172A',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 12 : 0,
   },
   gradientContainer: {
     flex: 1,
@@ -503,6 +613,21 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 24,
     paddingHorizontal: 16,
+  },
+  geofenceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  geofenceBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
   footerEncryptionText: {
     fontSize: 10,

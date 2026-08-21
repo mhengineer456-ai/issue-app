@@ -1,0 +1,20 @@
+const { fetchCompletedLots } = require('../src/services/lotService');
+
+async function testCompletedLotsImageEnrichment() {
+  console.log('Testing fetchCompletedLots() with Index sheet image enrichment...');
+  try {
+    const res = await fetchCompletedLots();
+    console.log('Error status:', res.error);
+    console.log('Total Lots fetched:', res.lots ? res.lots.length : 0);
+    if (res.lots && res.lots.length > 0) {
+      console.log('🎉🎉🎉 ENRICHMENT SUCCESSFUL!');
+      res.lots.forEach((lot) => {
+        console.log(`Lot #${lot.lotNumber}: Image URL -> ${lot.image || 'NONE'}`);
+      });
+    }
+  } catch (err) {
+    console.error('Fetch error:', err.message);
+  }
+}
+
+testCompletedLotsImageEnrichment();

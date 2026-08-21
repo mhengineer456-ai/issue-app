@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
-export default function HeaderBar({ department, deptThemeColor, isStitching, onBackPress, onOpenSummary }) {
+export default function HeaderBar({ department, deptThemeColor, isStitching, onBackPress, onOpenSummary, onOpenCompleted }) {
   return (
     <View style={styles.topHeader}>
       <TouchableOpacity onPress={onBackPress} style={styles.backBtn} activeOpacity={0.7}>
@@ -21,14 +21,22 @@ export default function HeaderBar({ department, deptThemeColor, isStitching, onB
           </Text>
         </View>
 
-        <Text style={styles.mainTitle}>Available Lots for Allotment</Text>
+        <Text style={styles.mainTitle}>Available Lots</Text>
       </View>
-      {onOpenSummary && (
-        <TouchableOpacity onPress={onOpenSummary} style={styles.summaryHeaderBtn} activeOpacity={0.7}>
-          <Ionicons name="pie-chart-outline" size={18} color="#38BDF8" />
-          <Text style={styles.summaryHeaderBtnText}>SUMMARY</Text>
-        </TouchableOpacity>
-      )}
+      <View style={styles.headerRightActions}>
+        {onOpenCompleted && (
+          <TouchableOpacity onPress={onOpenCompleted} style={styles.completedHeaderBtn} activeOpacity={0.7}>
+            <Ionicons name="checkmark-done-circle-outline" size={16} color="#34D399" />
+            <Text style={styles.completedHeaderBtnText}>COMPLETED</Text>
+          </TouchableOpacity>
+        )}
+        {onOpenSummary && (
+          <TouchableOpacity onPress={onOpenSummary} style={styles.summaryHeaderBtn} activeOpacity={0.7}>
+            <Ionicons name="pie-chart-outline" size={16} color="#38BDF8" />
+            <Text style={styles.summaryHeaderBtnText}>SUMMARY</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -83,22 +91,44 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  completedHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(52, 211, 153, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.35)',
+  },
+  completedHeaderBtnText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#34D399',
+    letterSpacing: 0.6,
+  },
   summaryHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(56, 189, 248, 0.3)',
   },
   summaryHeaderBtnText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#38BDF8',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
   },
 });
 

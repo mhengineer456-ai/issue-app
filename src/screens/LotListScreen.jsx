@@ -12,7 +12,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { fetchAvailableLots, fetchSupervisors, savePackingAllotment, saveStitchingAllotment } from '../services/lotService';
+import { fetchAvailableLots, fetchSupervisors, savePackingAllotment, saveStitchingAllotment, isLotAllowedForUser } from '../services/lotService';
 
 
 // Segregated Components
@@ -29,7 +29,7 @@ import TodoIssueModal from '../components/TodoIssueModal';
 import ExecutiveSummaryModal from '../components/ExecutiveSummaryModal';
 
 export default function LotListScreen({ route, navigation }) {
-  const { department = 'Stitching', departmentId = 'stitching' } = route.params || {};
+  const { department = 'Stitching', departmentId = 'stitching', user } = route.params || {};
 
   const [currentDept, setCurrentDept] = useState({
     name: department,
@@ -129,12 +129,14 @@ export default function LotListScreen({ route, navigation }) {
       setCurrentDept({ name: 'Stitching', id: 'stitching' });
     } else if (tabKey === 'packing') {
       setCurrentDept({ name: 'Packing', id: 'packing' });
+    } else if (tabKey === 'completed') {
+      navigation.navigate('CompletedLot', { user });
     } else if (tabKey === 'todo_issue') {
-      navigation.navigate('TodoIssue', { todayIssuedLots, availableLotsCount: lots.length });
+      navigation.navigate('TodoIssue', { user, todayIssuedLots, availableLotsCount: lots.length });
     } else if (tabKey === 'todo_list') {
-      navigation.navigate('TodoList', { todayIssuedLots });
+      navigation.navigate('TodoList', { user, todayIssuedLots });
     } else if (tabKey === 'summary') {
-      navigation.navigate('ExecutiveSummary', { lots, todayIssuedLots });
+      navigation.navigate('ExecutiveSummary', { user, lots, todayIssuedLots });
     }
   };
 
@@ -171,6 +173,10 @@ export default function LotListScreen({ route, navigation }) {
   // Filtered dataset
   const filteredLots = useMemo(() => {
     return lots.filter((lot) => {
+      // User/Operator Scoping (SHEELAGURU sees only assigned Garment Types, PINTU sees ALL)
+      if (!isLotAllowedForUser(user, lot)) {
+        return false;
+      }
       if (filters.supervisor.length > 0 && !filters.supervisor.includes(lot.stitchingSupervisor)) {
         return false;
       }
@@ -198,7 +204,7 @@ export default function LotListScreen({ route, navigation }) {
 
       return true;
     });
-  }, [lots, filters, searchTerm]);
+  }, [lots, filters, searchTerm, user]);
 
   // Summary Metrics
   const summary = useMemo(() => {
@@ -338,6 +344,7 @@ export default function LotListScreen({ route, navigation }) {
           deptThemeColor={deptThemeColor}
           isStitching={isStitching}
           onBackPress={handleBackPress}
+          onOpenCompleted={() => navigation.navigate('CompletedLot')}
           onOpenSummary={() => navigation.navigate('ExecutiveSummary', { lots, todayIssuedLots })}
         />
 

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -185,6 +186,19 @@ export default function HomeScreen({ route, navigation }) {
               <Text style={styles.actionTitle}>Lot Returns</Text>
               <Text style={styles.actionSub}>Process alterations or returns</Text>
             </TouchableOpacity>
+
+            {/* Completed Lots Card */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('CompletedLot', { user })}
+              style={styles.actionCard}
+            >
+              <View style={[styles.actionIconBadge, { backgroundColor: '#047857' }]}>
+                <Ionicons name="checkmark-done-circle-outline" size={24} color="#FFF" />
+              </View>
+              <Text style={styles.actionTitle}>Completed Lots</Text>
+              <Text style={styles.actionSub}>View finished & dispatched lots</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </LinearGradient>
@@ -195,8 +209,14 @@ export default function HomeScreen({ route, navigation }) {
             handleOpenLotList('Stitching', 'stitching');
           } else if (tabKey === 'packing') {
             handleOpenLotList('Packing', 'packing');
+          } else if (tabKey === 'completed') {
+            navigation.navigate('CompletedLot', { user });
+          } else if (tabKey === 'todo_issue') {
+            navigation.navigate('TodoIssue', { user });
+          } else if (tabKey === 'todo_list') {
+            navigation.navigate('TodoList', { user });
           } else if (tabKey === 'summary') {
-            handleOpenLotList(isPacking ? 'Packing' : 'Stitching', user.stationId);
+            navigation.navigate('ExecutiveSummary', { user });
           } else {
             handleOpenLotList(isPacking ? 'Packing' : 'Stitching', user.stationId);
           }
@@ -212,6 +232,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#F2F9F3',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 10 : 0,
   },
   container: {
     flex: 1,

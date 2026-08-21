@@ -7,6 +7,7 @@ import LotListScreen from '../screens/LotListScreen';
 import TodoIssueScreen from '../screens/TodoIssueScreen';
 import ExecutiveSummaryScreen from '../screens/ExecutiveSummaryScreen';
 import TodoListScreen from '../screens/TodoListScreen';
+import CompletedLotScreen from '../screens/CompletedLotScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -27,6 +28,7 @@ export default function AppNavigator() {
       <Stack.Screen name="TodoList" component={TodoListScreen} />
       <Stack.Screen name="TodoIssue" component={TodoIssueScreen} />
       <Stack.Screen name="ExecutiveSummary" component={ExecutiveSummaryScreen} />
+      <Stack.Screen name="CompletedLot" component={CompletedLotScreen} />
     </Stack.Navigator>
   );
 }

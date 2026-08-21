@@ -7,9 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lotissueapp.app"
     },
     "android": {
+      "package": "com.lotissueapp.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -19,6 +21,20 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/76d2329f-fa29-49d6-8c74-ec4c6637f5f6"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "76d2329f-fa29-49d6-8c74-ec4c6637f5f6"
+      }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

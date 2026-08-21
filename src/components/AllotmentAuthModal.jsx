@@ -13,7 +13,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
-const DEFAULT_AUTHORIZERS = ['PINTU', 'ADMIN', 'MANAGER'];
+const DEFAULT_AUTHORIZERS = ['PINTU', 'SHEELAGURU', 'ADMIN', 'MANAGER'];
 
 export default function AllotmentAuthModal({
   visible,

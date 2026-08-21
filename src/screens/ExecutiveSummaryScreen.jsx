@@ -68,6 +68,8 @@ export default function ExecutiveSummaryScreen({ route, navigation }) {
       navigation.navigate('LotList', { department: 'Stitching', departmentId: 'stitching' });
     } else if (tabKey === 'packing') {
       navigation.navigate('LotList', { department: 'Packing', departmentId: 'packing' });
+    } else if (tabKey === 'completed') {
+      navigation.navigate('CompletedLot');
     } else if (tabKey === 'todo_issue') {
       navigation.navigate('TodoIssue', { todayIssuedLots });
     } else if (tabKey === 'todo_list') {

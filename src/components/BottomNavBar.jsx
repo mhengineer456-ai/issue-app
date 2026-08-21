@@ -4,9 +4,10 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
 export default function BottomNavBar({
-  activeTab = 'stitching', // 'stitching' | 'packing' | 'todo_issue' | 'todo_list' | 'summary'
+  activeTab = 'stitching', // 'stitching' | 'packing' | 'completed' | 'todo_issue' | 'todo_list' | 'summary'
   stitchingCount = 0,
   packingCount = 0,
+  completedCount = 0,
   issuedTodayCount = 0,
   todoListCount = 0,
   onSelectTab,
@@ -60,7 +61,30 @@ export default function BottomNavBar({
           </Text>
         </TouchableOpacity>
 
-        {/* Tab 3: Issued Today (Lots issued by user on today's date) */}
+        {/* Tab 3: Completed Lots */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => onSelectTab('completed')}
+          style={[styles.tabItem, activeTab === 'completed' && styles.tabItemActive]}
+        >
+          <View style={styles.iconBadgeWrapper}>
+            <Ionicons
+              name={activeTab === 'completed' ? 'checkmark-done-circle' : 'checkmark-done-circle-outline'}
+              size={21}
+              color={activeTab === 'completed' ? '#047857' : colors.textMuted}
+            />
+            {completedCount > 0 && (
+              <View style={[styles.badgePill, { backgroundColor: '#047857' }]}>
+                <Text style={styles.badgeText}>{completedCount > 99 ? '99+' : completedCount}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={[styles.tabLabel, activeTab === 'completed' && styles.tabLabelActiveCompleted]}>
+            Completed
+          </Text>
+        </TouchableOpacity>
+
+        {/* Tab 4: Issued Today */}
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => onSelectTab('todo_issue')}
@@ -83,7 +107,7 @@ export default function BottomNavBar({
           </Text>
         </TouchableOpacity>
 
-        {/* Tab 4: Personal To-Do List (Daily Task Reminders) */}
+        {/* Tab 5: To-Do List */}
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => onSelectTab('todo_list')}
@@ -106,7 +130,7 @@ export default function BottomNavBar({
           </Text>
         </TouchableOpacity>
 
-        {/* Tab 5: Executive Summary (All Production Summaries) */}
+        {/* Tab 6: Summary */}
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => onSelectTab('summary')}
@@ -136,6 +160,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: colors.cardBorder,
+    paddingBottom: Platform.OS === 'android' ? 16 : Platform.OS === 'ios' ? 24 : 0,
+    paddingTop: 4,
     ...Platform.select({
       web: { boxShadow: '0px -4px 16px rgba(15, 23, 42, 0.08)' },
       default: {
@@ -143,7 +169,7 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.1,
         shadowRadius: 8,
-        elevation: 10,
+        elevation: 12,
       },
     }),
   },
@@ -197,6 +223,10 @@ const styles = StyleSheet.create({
   },
   tabLabelActivePacking: {
     color: colors.packing,
+    fontWeight: '800',
+  },
+  tabLabelActiveCompleted: {
+    color: '#047857',
     fontWeight: '800',
   },
   tabLabelActiveTodoIssue: {

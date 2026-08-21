@@ -1,4 +1,5 @@
-import { GOOGLE_API_KEY, SPREADSHEET_ID, SUPERVISORS_SPREADSHEET_ID, ISSUES_SPREADSHEET_ID, RAWPACK_SPREADSHEET_ID, APPS_SCRIPT_URL, STITCHING_APPS_SCRIPT_URL, STITCHING_SPREADSHEET_ID } from '../credentials';
+import { GOOGLE_API_KEY, SPREADSHEET_ID, SUPERVISORS_SPREADSHEET_ID, ISSUES_SPREADSHEET_ID, RAWPACK_SPREADSHEET_ID, APPS_SCRIPT_URL, STITCHING_APPS_SCRIPT_URL, STITCHING_SPREADSHEET_ID, COMPLETED_LOTS_SPREADSHEET_ID, COMPLETED_LOTS_APPS_SCRIPT_URL } from '../credentials';
+
 
 
 // Normalization functions
@@ -586,7 +587,7 @@ export const fetchAvailableLots = async (department = 'Stitching') => {
         const hasStitchingSupervisor = supervisorVal !== '' && supervisorVal !== 'N/A' && supervisorVal !== '-';
         const isNotInIssuesSheet = !issuesLotSet.has(lotNo);
         const isNotInRawpackAssigned = !rawpackAssignedLotSet.has(lotNo);
-        
+
         isTargetLot = hasStitchingSupervisor && isNotInIssuesSheet && isNotInRawpackAssigned;
       } else {
         // FOR STITCHING: Fetch Index sheet lots where Supervisor is empty (unassigned) AND not already issued in Stitching Issues sheet
@@ -799,4 +800,380 @@ export const saveStitchingAllotment = async ({ lot, supervisor, authorizedBy }) 
   }
 };
 
+export const parseCompletedLotRows = (rows) => {
+  if (!rows || !Array.isArray(rows) || rows.length < 2) return [];
+  const headers = rows[0].map((h) => (h || '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
 
+  const recordIdIdx = headers.findIndex((h) => h.includes('recordid') || h.includes('id'));
+  const timestampIdx = headers.findIndex((h) => h.includes('timestamp') || h.includes('date') || h.includes('time'));
+  const supervisorIdx = headers.findIndex((h) => h.includes('supervisor'));
+  const lotIdx = headers.findIndex((h) => h.includes('lotnumber') || h.includes('lotno') || h.includes('lot'));
+  const partyIdx = headers.findIndex((h) => h.includes('party') || h.includes('partyname'));
+  const brandIdx = headers.findIndex((h) => h.includes('brand'));
+  const fabricIdx = headers.findIndex((h) => h.includes('fabric') || h.includes('material'));
+  const garmentIdx = headers.findIndex((h) => h.includes('garment') || h.includes('type'));
+  const styleIdx = headers.findIndex((h) => h.includes('style'));
+  const qtyIdx = headers.findIndex((h) => h.includes('pcs') || h.includes('qty') || h.includes('quantity'));
+  const imageIdx = headers.findIndex((h) => h.includes('image') || h.includes('url') || h.includes('photo'));
+  const statusIdx = headers.findIndex((h) => h.includes('status') || h.includes('operation'));
+  const remarksIdx = headers.findIndex((h) => h.includes('remarks') || h.includes('notes') || h.includes('remark'));
+
+  const lots = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i] || [];
+    const lotNumber = lotIdx !== -1 && r[lotIdx] ? r[lotIdx].toString().trim() : '';
+    if (!lotNumber) continue;
+
+    const rawImg = imageIdx !== -1 && r[imageIdx] ? r[imageIdx].toString().trim() : '';
+    const directImg = getDirectImageUrl(rawImg);
+
+    lots.push({
+      id: recordIdIdx !== -1 && r[recordIdIdx] ? r[recordIdIdx].toString().trim() : `comp_${i}`,
+      recordId: recordIdIdx !== -1 && r[recordIdIdx] ? r[recordIdIdx].toString().trim() : `comp_${i}`,
+      timestamp: timestampIdx !== -1 && r[timestampIdx] ? r[timestampIdx].toString().trim() : '',
+      supervisor: supervisorIdx !== -1 && r[supervisorIdx] ? r[supervisorIdx].toString().trim() : 'N/A',
+      lotNumber: lotNumber,
+      partyName: partyIdx !== -1 && r[partyIdx] ? r[partyIdx].toString().trim() : 'N/A',
+      brand: brandIdx !== -1 && r[brandIdx] ? r[brandIdx].toString().trim() : 'N/A',
+      fabric: fabricIdx !== -1 && r[fabricIdx] ? r[fabricIdx].toString().trim() : 'N/A',
+      garmentType: garmentIdx !== -1 && r[garmentIdx] ? r[garmentIdx].toString().trim() : 'N/A',
+      style: styleIdx !== -1 && r[styleIdx] ? r[styleIdx].toString().trim() : 'N/A',
+      pcsQty: qtyIdx !== -1 && r[qtyIdx] ? parseInt(r[qtyIdx].toString().replace(/,/g, ''), 10) || 0 : 0,
+      image: directImg,
+      status: statusIdx !== -1 && r[statusIdx] ? r[statusIdx].toString().trim() : 'Complete Lot',
+      remarks: remarksIdx !== -1 && r[remarksIdx] ? r[remarksIdx].toString().trim() : '',
+    });
+  }
+  return lots;
+};
+
+export const parseCsvToRows = (csvText) => {
+  if (!csvText || typeof csvText !== 'string') return [];
+  const lines = csvText.split(/\r?\n/);
+  const rows = [];
+  for (let line of lines) {
+    if (!line.trim()) continue;
+    // Simple CSV parser handling quoted strings
+    const cells = [];
+    let currentCell = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        cells.push(currentCell.replace(/^"|"$/g, '').trim());
+        currentCell = '';
+      } else {
+        currentCell += char;
+      }
+    }
+    cells.push(currentCell.replace(/^"|"$/g, '').trim());
+    rows.push(cells);
+  }
+  return rows;
+};
+
+export const parseCompletionAuditRows = (rows) => {
+  if (!rows || !Array.isArray(rows) || rows.length < 2) return [];
+  const headers = rows[0].map((h) => (h || '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+  const lotIdx = headers.findIndex((h) => h.includes('lotnumber') || h.includes('lotno') || h.includes('lot'));
+  const timestampIdx = headers.findIndex((h) => h.includes('timestamp') || h.includes('date') || h.includes('time'));
+  const compDateIdx = headers.findIndex((h) => h.includes('completiondate') || h.includes('compdate'));
+  const supervisorIdx = headers.findIndex((h) => h.includes('supervisor'));
+  const remarksIdx = headers.findIndex((h) => h.includes('remarks') || h.includes('notes') || h.includes('action'));
+
+  const lots = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i] || [];
+    const lotNumber = lotIdx !== -1 && r[lotIdx] ? r[lotIdx].toString().trim() : '';
+    if (!lotNumber) continue;
+
+    lots.push({
+      id: `audit_${i}`,
+      recordId: `audit_${i}`,
+      timestamp: compDateIdx !== -1 && r[compDateIdx] ? r[compDateIdx].toString().trim() : (timestampIdx !== -1 && r[timestampIdx] ? r[timestampIdx].toString().trim() : ''),
+      supervisor: supervisorIdx !== -1 && r[supervisorIdx] ? r[supervisorIdx].toString().trim() : 'Dashboard User',
+      lotNumber: lotNumber,
+      partyName: 'N/A',
+      brand: 'N/A',
+      fabric: 'N/A',
+      garmentType: 'N/A',
+      style: 'N/A',
+      pcsQty: 0,
+      image: '',
+      status: 'Completed',
+      remarks: remarksIdx !== -1 && r[remarksIdx] ? r[remarksIdx].toString().trim() : 'Lot marked as complete',
+    });
+  }
+  return lots;
+};
+
+// Fetch Lot Number -> Image URL lookup map from Master Index sheet
+export const fetchIndexImageMap = async () => {
+  try {
+    const range = 'Index!A:M';
+    const indexUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${GOOGLE_API_KEY}`;
+    const res = await fetch(indexUrl);
+    if (!res.ok) return {};
+
+    const data = await res.json();
+    const rows = data.values || [];
+    if (rows.length <= 1) return {};
+
+    const headers = rows[0].map((h) => (h || '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const lotIdx = headers.findIndex((h) => h.includes('lotnumber') || h.includes('lotno') || h.includes('lot'));
+    const imgIdx = headers.findIndex((h) => h.includes('image') || h.includes('img') || h.includes('url') || h.includes('photo'));
+
+    if (lotIdx === -1 || imgIdx === -1) return {};
+
+    const map = {};
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i] || [];
+      const lotNo = row[lotIdx] ? row[lotIdx].toString().trim() : '';
+      const img = row[imgIdx] ? row[imgIdx].toString().trim() : '';
+      if (lotNo && img) {
+        map[lotNo.toLowerCase()] = getDirectImageUrl(img);
+      }
+    }
+    return map;
+  } catch (e) {
+    console.warn('Error fetching Index image map:', e.message);
+    return {};
+  }
+};
+
+// Fetch Completed Lots ONLY from the "Completed Lots" sheet tab (REQUIREMENTS / COMPLETED_LOTS_SPREADSHEET_ID)
+export const fetchCompletedLots = async (customApiKey = null) => {
+  const apiKey = customApiKey || GOOGLE_API_KEY || 'AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk';
+  const targetSpreadsheetId = COMPLETED_LOTS_SPREADSHEET_ID || '1Ydzo9F22FUsU-VTQdUfz12uQ-_l4E_B0fhp0w4H0DYA';
+  const idVariants = [
+    targetSpreadsheetId,
+    '1Ydzo9F22FUsU-VTQdUfz12uQ-_l4E_B0fhp0w4H0DYA',
+    SPREADSHEET_ID || '1Hj3JeJEKB43aYYWv8gk2UhdU6BWuEQfCg5pBlTdBMNA',
+  ];
+
+  const sheetName = 'Completed Lots';
+  let fetchedLots = [];
+
+  // 1. Primary Direct Google Sheets API v4 Fetch
+  for (const sheetId of idVariants) {
+    if (!sheetId) continue;
+    const range = `${encodeURIComponent(sheetName)}!A:M`;
+    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`;
+
+    try {
+      const res = await fetch(apiUrl);
+      if (res.ok) {
+        const data = await res.json();
+        const rows = data.values || [];
+        if (rows.length >= 2) {
+          fetchedLots = parseCompletedLotRows(rows);
+          if (fetchedLots.length > 0) break;
+        }
+      }
+    } catch (e) {
+      console.warn('Google Sheets API direct fetch error:', e.message);
+    }
+  }
+
+  // 2. Apps Script Web App Fallback if Sheets API returned no rows
+  if (fetchedLots.length === 0) {
+    const scriptUrls = [COMPLETED_LOTS_APPS_SCRIPT_URL, APPS_SCRIPT_URL, STITCHING_APPS_SCRIPT_URL];
+    for (const scriptUrl of scriptUrls) {
+      if (!scriptUrl || scriptUrl.includes('YOUR_')) continue;
+      try {
+        const targetUrl = `${scriptUrl}?action=getCompletedLots&sheetName=${encodeURIComponent(sheetName)}`;
+        const res = await fetch(targetUrl);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.completedRecords && Array.isArray(json.completedRecords) && json.completedRecords.length > 0) {
+            fetchedLots = json.completedRecords.map((item, idx) => ({
+              id: item.id || `comp_${idx}`,
+              recordId: item.id || `comp_${idx}`,
+              timestamp: item.timestamp || '',
+              supervisor: item.supervisor || 'N/A',
+              lotNumber: item.lotNumber || item.lot || '',
+              partyName: item.party || item.partyName || 'N/A',
+              brand: item.brand || 'N/A',
+              fabric: item.fabric || item.material || 'N/A',
+              garmentType: item.garment || item.garmentType || 'N/A',
+              style: item.style || 'N/A',
+              pcsQty: parseInt(item.pcs, 10) || 0,
+              image: getDirectImageUrl(item.imageUrl || item.image || ''),
+              status: item.status || 'Completed',
+              remarks: item.remarks || '',
+            })).filter((l) => !!l.lotNumber);
+
+            if (fetchedLots.length > 0) break;
+          }
+
+          if (json.ok && Array.isArray(json.values) && json.values.length >= 2) {
+            fetchedLots = parseCompletedLotRows(json.values);
+            if (fetchedLots.length > 0) break;
+          }
+        }
+      } catch (e) {
+        console.warn('Apps Script Web App fetch error:', e.message);
+      }
+    }
+  }
+
+  if (fetchedLots.length === 0) {
+    return {
+      error: 'SHEET_DIRECT_FETCH_FAILED',
+      message: 'Unable to fetch completed lots from Completed Lots sheet tab.',
+      lots: [],
+    };
+  }
+
+  // 3. Enrich missing images from Master Index sheet (Index!A:M -> Image Url)
+  try {
+    const imageMap = await fetchIndexImageMap();
+    if (imageMap && Object.keys(imageMap).length > 0) {
+      fetchedLots.forEach((lot) => {
+        if (!lot.image && lot.lotNumber) {
+          const key = lot.lotNumber.toString().trim().toLowerCase();
+          if (imageMap[key]) {
+            lot.image = imageMap[key];
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('Error enriching completed lots with Index images:', e.message);
+  }
+
+  // 4. Filter out ONLY lots whose Completed Status in Master Index sheet (Column V) ALREADY has "Complete Lot" / "Approved"
+  try {
+    const completedIndexLotSet = await fetchCompletedIndexLotNumbers();
+    fetchedLots = fetchedLots.filter((lot) => {
+      if (!lot || !lot.lotNumber) return false;
+      const lotKey = lot.lotNumber.toString().trim().toLowerCase();
+
+      // If Column V (Completed Status) in Index sheet ALREADY has "Complete Lot" / "Approved" -> HIDE FROM UI!
+      if (completedIndexLotSet.has(lotKey)) {
+        return false;
+      }
+
+      // Otherwise, keep in UI so user can click Approval Submission!
+      return true;
+    });
+  } catch (e) {
+    console.warn('Error filtering completed lots by Index status:', e.message);
+  }
+
+  return { error: null, lots: fetchedLots };
+};
+
+// Fetch set of Lot Numbers that ALREADY have "Complete Lot" or "Approved" status in the Master Index sheet
+export const fetchCompletedIndexLotNumbers = async () => {
+  try {
+    const range = 'Index!A:Z';
+    const indexUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${GOOGLE_API_KEY}`;
+    const res = await fetch(indexUrl);
+    if (!res.ok) return new Set();
+
+    const data = await res.json();
+    const rows = data.values || [];
+    if (rows.length <= 1) return new Set();
+
+    const headers = rows[0].map((h) => (h || '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const lotIdx = headers.findIndex((h) => h.includes('lotnumber') || h.includes('lotno') || h === 'lot');
+    const compStatusIdx = headers.findIndex((h) => h.includes('completedstatus') || h.includes('completestatus') || h === 'status');
+
+    if (lotIdx === -1) return new Set();
+
+    const completedSet = new Set();
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i] || [];
+      const lotNo = row[lotIdx] ? row[lotIdx].toString().trim() : '';
+      const compStatusVal = compStatusIdx !== -1 && row[compStatusIdx] ? row[compStatusIdx].toString().trim() : '';
+
+      if (lotNo && compStatusVal) {
+        const lowerVal = compStatusVal.toLowerCase();
+        if (
+          lowerVal.includes('complete') ||
+          lowerVal.includes('approved') ||
+          lowerVal.includes('submitted')
+        ) {
+          completedSet.add(lotNo.toLowerCase());
+        }
+      }
+    }
+    return completedSet;
+  } catch (e) {
+    console.warn('Error fetching completed Index lot numbers:', e.message);
+    return new Set();
+  }
+};
+
+// Single-URL Approval Submission: Hits ONLY Master Index Sheet Web App
+export const submitLotApproval = async ({
+  lotNumber,
+  supervisor = 'MONU',
+  remarks = 'Approval Submitted via Pintu',
+  status = 'Complete Lot',
+}) => {
+  const indexScriptUrl = COMPLETED_LOTS_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbz9ofgmid-74YQ61oRUN6d4crBlF5FfG5qjeXDg2bUoLoZ7eBWkRVx58t4UzfNODuuzfA/exec';
+
+  const cleanLot = lotNumber ? lotNumber.toString().trim() : '';
+  const cleanSup = supervisor ? supervisor.toString().trim() : 'MONU';
+  const cleanRemarks = remarks || 'Approval Submitted via Pintu';
+  const cleanStatus = status || 'Complete Lot';
+
+  const indexQuery = `${indexScriptUrl}?action=updatestatus&type=completed&lot=${encodeURIComponent(cleanLot)}&lotNumber=${encodeURIComponent(cleanLot)}&status=${encodeURIComponent(cleanStatus)}&remarks=${encodeURIComponent(cleanRemarks)}&supervisor=${encodeURIComponent(cleanSup)}`;
+
+  // 1. Send via Image ping for instant execution in web browser
+  if (typeof window !== 'undefined' && typeof Image !== 'undefined') {
+    try {
+      const img = new Image();
+      img.src = indexQuery;
+    } catch (e) {}
+  }
+
+  // 2. Send via fetch with mode: 'no-cors'
+  try {
+    await fetch(indexQuery, { mode: 'no-cors' }).catch(() => {});
+  } catch (e) {}
+
+  return { ok: true, status: 'success', message: 'Approval recorded in Master Index sheet!' };
+};
+
+// Allowed Garment Types scoping for SHEELAGURU
+export const SHEELAGURU_GARMENT_TYPES = [
+  'WINDCHEATER',
+  'JACKET',
+  'TRACK SUIT',
+  'TRACKSUIT',
+  'TRACKSUIT + LOWER',
+  'TS - UPPER',
+  'TS - LOWER',
+  'S/L JACKET',
+  'SL JACKET',
+];
+
+export const isLotAllowedForUser = (user, lot) => {
+  if (!user) return true;
+  const operator = (typeof user === 'string' ? user : user.operatorId || user.name || '').toUpperCase().trim();
+
+  // If logged in as SHEELAGURU -> filter strictly by assigned Garment Types
+  if (operator === 'SHEELAGURU') {
+    if (!lot) return false;
+    const garment = (lot['Garment Type'] || lot.garmentType || lot.garment || '').toString().toUpperCase().trim();
+    if (!garment) return false;
+
+    return SHEELAGURU_GARMENT_TYPES.some((allowed) => {
+      const cleanAllowed = allowed.toUpperCase().trim();
+      return (
+        garment === cleanAllowed ||
+        garment.includes(cleanAllowed) ||
+        cleanAllowed.includes(garment)
+      );
+    });
+  }
+
+  // PINTU or any other user sees ALL data
+  return true;
+};
